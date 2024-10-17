@@ -119,7 +119,7 @@ function (s::HyperelasticCompressibleDisplacementSolver{T})(
             assemble_hyperelastic!(globalinfo,s.problem,elementinfo,s.vars,getpenalty(s),s.xmin,assemble_f=assemble_f)
             apply_zero!(globalinfo.K,globalinfo.g,ch)
             normg[newton_itr] = norm(globalinfo.g)
-            println("Tstep: $ts / 1]. Iteration: $newton_itr. normg is equal to " * string(normg[newton_itr]))
+            println("Dennis Test - Tstep: $ts / 1]. Iteration: $newton_itr. normg is equal to " * string(normg[newton_itr]))
             # Check for convergence
             if normg[newton_itr] < NEWTON_TOL
                 break
