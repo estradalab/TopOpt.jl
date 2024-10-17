@@ -110,8 +110,8 @@ function sensitivityFieldFncs(matlModel::Symbol)
 end
 
 # Function that produces a volume-weighted element-wise sensitivity metric
-# sens_IVW = sensitivity_PVW(x,K,V0,stressTerms,kinTerms,ξ)
-    # x is the 
+# sens_IVW = sensitivity_PVW(pd,K,V0,stressTerms,kinTerms,ξ)
+    # pd are the pseudodensities
     # K₁, K₂, and K₃ are all vectors of size [nels] (acquired from FtoK123 or orth_decomp)
     # Where matl_props is a vector, e.g. for Mooney-Rivlin matl_props could be [0.04 0.001 0.5]
     # Vol is a vector of size [nels] that contains information of the volume for each element
@@ -121,24 +121,24 @@ end
 # Outputs
 # sens_IVW (sensitivity metric across all elements)
 
-function sensitivityPVW(x,K,V0,stressTerms,kinTerms,ξ)
+function sensitivityPVW(pd,K,V0,stressTerms,kinTerms,ξ)
     # Stress term evaluation at K
     ξᵢ∂²W_∂K₁∂ξᵢ = ξ[end]*stressTerms[1,end].(K[1]) 
     ξᵢ∂²W_∂K₂∂ξᵢ = sum(map(i -> ξ[i]*stressTerms[2,i].(K[2],K[3]), 1:length(ξ)-1))
     ξᵢ∂²W_∂K₃∂ξᵢ = sum(map(i -> ξ[i]*stressTerms[3,i].(K[2],K[3]), 1:length(ξ)-1))
 
     # Internal virtual work (IVW) evaluation
-    IVW_bar = zeros(length(x))
+    IVW_bar = zeros(length(pd))
     for i = 1:length(ξ) # ξᵢ
         for j = 1:length(K) # Kⱼ
             if i == length(ξ) && j == 1
-                IVW_bar += 3*V0.*(x.^2).*ξᵢ∂²W_∂K₁∂ξᵢ.*kinTerms[1,i,j].(K[1])
+                IVW_bar += 3*V0.*(pd.^2).*ξᵢ∂²W_∂K₁∂ξᵢ.*kinTerms[1,i,j].(K[1])
             elseif i != length(ξ) && j != 1 
-                IVW_bar += V0.*(x.^2).*(ξᵢ∂²W_∂K₂∂ξᵢ.*kinTerms[2,i,j].(K[2],K[3]) + (9*(ones(length(x))-(K[3].^2))./(K[2].^2)).*ξᵢ∂²W_∂K₃∂ξᵢ.*kinTerms[3,i,j].(K[2],K[3]))
+                IVW_bar += V0.*(pd.^2).*(ξᵢ∂²W_∂K₂∂ξᵢ.*kinTerms[2,i,j].(K[2],K[3]) + (9*(ones(length(pd))-(K[3].^2))./(K[2].^2)).*ξᵢ∂²W_∂K₃∂ξᵢ.*kinTerms[3,i,j].(K[2],K[3]))
             end
         end
     end
-    return IVW_bar/sum(V0.*x) # Volume-weighted element-wise sensitivity metric of all IVW fields
+    return IVW_bar/sum(V0.*pd) # Volume-weighted element-wise sensitivity metric of all IVW fields
 end
 
 # NOTE: Functions below are legacy material. They should work properly, however, they are less well vetted than the sensitivity related functions.
