@@ -295,7 +295,7 @@ function _make_Kes_and_weights(
     return Kes, weights
 end
 
-function Ψ(C, mp::NeoHooke)
+function Ψ(C, mp) # JGB: add to .ipynb
     μ = mp.μ
     λ = mp.λ
     I1 = tr(C)
@@ -308,16 +308,29 @@ function Ψ(C, mp::NeoHooke)
     #return μ / 2 * (I1bar - 3) + 0.5*(λ + 2μ/3)*(J-1)^2 # ABAQUS/Bower version
 end
 
-function Ψ(C, mp::MooneyRivlin)
-    C₁₀ = mp.C₁₀
-    C₀₁ = mp.C₀₁
-    κ = mp.κ
-    I1 = tr(C)
-    J = sqrt(det(C))
-    I1bar = I1*J^(-2/3)
-    I2bar = 0.5*(I1bar^2-tr(C*C)*J^(-4/3))
-    return C₁₀ * (I1bar - 3) + C₀₁ * (I2bar - 3) + κ/2 * (J - 1)^2
-end
+# function Ψ(C, mp::NeoHooke)
+#     μ = mp.μ
+#     λ = mp.λ
+#     I1 = tr(C)
+#     J = sqrt(det(C))
+#     return μ / 2 * (I1 - 3) - μ * log(J) + λ / 2 * (J - 1)^2 # Ferrite.jl version
+#     #return μ / 2 * (Ic - 3 - 2 * log(J)) + λ / 2 * (J-1)^2 # Bower version
+#     #Cnew = @MArray C
+#     #I1bar = Ic*J^-2/3
+#     #I1bar = Ic*det(C)^-1/3
+#     #return μ / 2 * (I1bar - 3) + 0.5*(λ + 2μ/3)*(J-1)^2 # ABAQUS/Bower version
+# end
+
+# function Ψ(C, mp::MooneyRivlin)
+#     C₁₀ = mp.C₁₀
+#     C₀₁ = mp.C₀₁
+#     κ = mp.κ
+#     I1 = tr(C)
+#     J = sqrt(det(C))
+#     I1bar = I1*J^(-2/3)
+#     I2bar = 0.5*(I1bar^2-tr(C*C)*J^(-4/3))
+#     return C₁₀ * (I1bar - 3) + C₀₁ * (I2bar - 3) + κ/2 * (J - 1)^2
+# end
 
 function constitutive_driver(C, mp) # JGB removed type ::NeoHook from mp
     # Compute all derivatives in one function call
