@@ -297,10 +297,11 @@ end
 
 function Ψ(C, mp::NeoHooke)
     μ = mp.μ
-    λ = mp.λ
-    I1 = tr(C)
+    κ = mp.κ
     J = sqrt(det(C))
-    return μ / 2 * (I1 - 3) - μ * log(J) + λ / 2 * (J - 1)^2 # Ferrite.jl version
+    Ī₁ = tr(C)*J^(-2/3)
+    return μ/2*(Ī₁-3) + κ/2*(J-1)^2
+    # return μ / 2 * (I1 - 3) - μ * log(J) + λ / 2 * (J - 1)^2 # Ferrite.jl version
     #return μ / 2 * (Ic - 3 - 2 * log(J)) + λ / 2 * (J-1)^2 # Bower version
     #Cnew = @MArray C
     #I1bar = Ic*J^-2/3
@@ -314,9 +315,9 @@ function Ψ(C, mp::MooneyRivlin)
     κ = mp.κ
     I1 = tr(C)
     J = sqrt(det(C))
-    I1bar = I1*J^(-2/3)
-    I2bar = 0.5*(I1bar^2-tr(C*C)*J^(-4/3))
-    return C₁₀ * (I1bar - 3) + C₀₁ * (I2bar - 3) + κ/2 * (J - 1)^2
+    Ī₁ = I1*J^(-2/3)
+    Ī₂ = 0.5*(Ī₁^2-tr(C^2)*J^(-4/3))
+    return C₁₀ * (Ī₁ - 3) + C₀₁ * (Ī₂ - 3) + κ/2 * (J - 1)^2
 end
 
 function constitutive_driver(C, mp::ConstitutiveLaw) # JGB removed type ::NeoHook from mp
