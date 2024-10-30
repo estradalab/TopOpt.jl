@@ -6,6 +6,7 @@ using ..TopOpt.Utilities
 using ..TopOpt: PENALTY_BEFORE_INTERPOLATION
 using ..Utilities: @forward_property
 using Distributions: Distributions
+# using DifferentiableEigen
 
 using VTKDataTypes
 
@@ -58,6 +59,8 @@ export RayProblem,
     assemble_hyperelastic!,
     ConstitutiveLaw,
     NeoHooke,
-    MooneyRivlin
+    MooneyRivlin,
+    Yeoh,
+    ArrudaBoyce
 
 end # module

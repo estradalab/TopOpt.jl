@@ -299,8 +299,9 @@ function Ψ(C, mp::NeoHooke)
     μ = mp.μ
     κ = mp.κ
     J = sqrt(det(C))
-    Ī₁ = tr(C)*J^(-2/3)
-    return μ/2*(Ī₁-3) + κ/2*(J-1)^2
+    I₁ = tr(C)
+    Ī₁ = I₁*J^(-2/3)
+    return κ == Inf ? μ/2*(I₁-3) : μ/2*(Ī₁-3) + κ/2*(J-1)^2
     # return μ / 2 * (I1 - 3) - μ * log(J) + λ / 2 * (J - 1)^2 # Ferrite.jl version
     #return μ / 2 * (Ic - 3 - 2 * log(J)) + λ / 2 * (J-1)^2 # Bower version
     #Cnew = @MArray C
@@ -317,7 +318,56 @@ function Ψ(C, mp::MooneyRivlin)
     J = sqrt(det(C))
     Ī₁ = I1*J^(-2/3)
     Ī₂ = 0.5*(Ī₁^2-tr(C^2)*J^(-4/3))
-    return C₁₀ * (Ī₁ - 3) + C₀₁ * (Ī₂ - 3) + κ/2 * (J - 1)^2
+    return κ == Inf ? C₁₀ * (Ī₁ - 3) + C₀₁ * (Ī₂ - 3) : C₁₀ * (Ī₁ - 3) + C₀₁ * (Ī₂ - 3) + κ/2 * (J - 1)^2
+end
+
+function Ψ(C, mp::Yeoh)
+    Cᵢ₀ = mp.Cᵢ₀
+    κ = mp.κ
+    I1 = tr(C)
+    J = sqrt(det(C))
+    Ī₁ = I1*J^(-2/3)
+    ψ_yeoh = 0.
+    for i = 1:length(Cᵢ₀)
+        ψ_yeoh += Cᵢ₀[i]*(Ī₁ - 3)^i
+    end
+    return κ == Inf ? ψ_yeoh : ψ_yeoh + κ/2 * (J - 1)^2
+end
+
+function Ψ(C, mp::ArrudaBoyce)
+    μ = mp.μ
+    λₘ = mp.λₘ
+    κ = mp.κ
+    I1 = tr(C)
+    J = sqrt(det(C))
+    Ī₁ = I1*J^(-2/3)
+    C = [1/2 1/20 11/1050 19/7000 519/673750]
+    ψ_AB = 0.
+    for i = 1:5
+        ψ_AB += μ * (C[i]/(λₘ^(2*i-2))) * (Ī₁^i - 3^i)
+    end
+    return κ == Inf ? ψ_AB : ψ_AB + κ/2 * (J - 1)^2
+end
+
+# function Ψ(C, mp::Ogden) # Work in progress; computationally expensive operations due to eigen
+#     μᵢ = mp.μᵢ
+#     αᵢ = mp.αᵢ
+#     κ = mp.κ
+#     J = sqrt(det(C))
+#     λ_bar = J^(-1/3)*sqrt.(DifferentiableEigen.eigen(C)[1][1:2:end])
+#     ψ_ogden = 0.
+#     for i = 1:length(μᵢ)
+#         ψ_ogden += (2*μᵢ[i]/αᵢ[i]^2) * (λ_bar[1]^α₁ + λ_bar[2]^αᵢ[i] + λ_bar[3]^αᵢ[i] - 3)
+#     end
+#     return κ == Inf ? ψ_ogden : ψ_ogden + κ/2 * (J - 1)^2
+# end
+
+function Ψ(C, mp)
+    μ = mp.μ
+    λ = mp.λ
+    J = sqrt(det(C))
+    I₁ = tr(C)
+    return μ / 2 * (I₁ - 3) - μ * log(J) + λ / 2 * (J - 1)^2 # Ferrite.jl version
 end
 
 function constitutive_driver(C, mp::ConstitutiveLaw) # JGB removed type ::NeoHook from mp
