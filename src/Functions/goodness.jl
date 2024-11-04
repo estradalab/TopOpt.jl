@@ -135,9 +135,9 @@ function sensitivityPVW(x,K,V0,stressTerms,kinTerms,ξ;decouple=false)
         for i = 1:length(ξ) # ξᵢ
             for j = 1:length(K) # Kⱼ
                 if i == length(ξ) && j == 1
-                    IVW_bar .+= 3*V0.*(x.^2).*ξᵢ∂²W_∂K₁∂ξᵢ.*kinTerms[1,i,j].(K[1])
+                    IVW_bar += 3*V0.*(x.^2).*ξᵢ∂²W_∂K₁∂ξᵢ.*kinTerms[1,i,j].(K[1])
                 elseif i != length(ξ) && j != 1 
-                    IVW_bar .+= V0.*(x.^2).*(ξᵢ∂²W_∂K₂∂ξᵢ.*kinTerms[2,i,j].(K[2],K[3]) .+ (9*(ones(length(x)).-(K[3].^2))./(K[2].^2)).*ξᵢ∂²W_∂K₃∂ξᵢ.*kinTerms[3,i,j].(K[2],K[3]))
+                    IVW_bar += V0.*(x.^2).*(ξᵢ∂²W_∂K₂∂ξᵢ.*kinTerms[2,i,j].(K[2],K[3]) .+ (9*(ones(length(x)).-(K[3].^2))./(K[2].^2)).*ξᵢ∂²W_∂K₃∂ξᵢ.*kinTerms[3,i,j].(K[2],K[3]))
                 end
             end
         end
@@ -148,9 +148,9 @@ function sensitivityPVW(x,K,V0,stressTerms,kinTerms,ξ;decouple=false)
             IVW_bar[i] = zeros(length(x))
             for j = 1:length(K) # Kⱼ
                 if i == length(ξ) && j == 1
-                    IVW_bar[i] .+= 3*V0.*(x.^2).*ξᵢ∂²W_∂K₁∂ξᵢ.*kinTerms[1,i,j].(K[1])
+                    IVW_bar[i] += 3*V0.*(x.^2).*ξᵢ∂²W_∂K₁∂ξᵢ.*kinTerms[1,i,j].(K[1])
                 elseif i != length(ξ) && j != 1 
-                    IVW_bar[i] .+= V0.*(x.^2).*(ξᵢ∂²W_∂K₂∂ξᵢ.*kinTerms[2,i,j].(K[2],K[3]) .+ (9*(ones(length(x)).-(K[3].^2))./(K[2].^2)).*ξᵢ∂²W_∂K₃∂ξᵢ.*kinTerms[3,i,j].(K[2],K[3]))
+                    IVW_bar[i] += V0.*(x.^2).*(ξᵢ∂²W_∂K₂∂ξᵢ.*kinTerms[2,i,j].(K[2],K[3]) .+ (9*(ones(length(x)).-(K[3].^2))./(K[2].^2)).*ξᵢ∂²W_∂K₃∂ξᵢ.*kinTerms[3,i,j].(K[2],K[3]))
                 end
             end
             IVW_bar[i] = IVW_bar[i]./sum(V0.*x)
