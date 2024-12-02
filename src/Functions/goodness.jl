@@ -109,10 +109,20 @@ function sensitivityFieldFncs(matlModel::Symbol)
     return stressTerms, kinTerms
 end
 
+# Function that equalizes eta
+function equalizeEta(η,K1,x,V0)
+    norm = sqrt.(η[1,1].^2 + η[1,2].^2 + η[1,3].^2 + η[2,1].^2 + η[2,2].^2 + η[2,3].^2 + η[3,1].^2 + η[3,2].^2 + η[3,3].^2)
+    avg_norm = sum(V0.*x.*norm)/sum(V0.*x)
+    del_vol = sum(V0.*x.*(exp.(K1).-1))/sum(V0.*x)
+    η_scale = del_vol/avg_norm
+    return η_scale
+end
+
 # Function that produces a volume-weighted element-wise sensitivity metric
 # sens_IVW = sensitivity_PVW(x,K,V0,stressTerms,kinTerms,ξ)
     # x are the pseudodensities
     # K₁, K₂, and K₃ are all vectors of size [nels] (acquired from FtoK123 or orth_decomp)
+    # mat is a structure of two matrices that are functions of η: Φ (normalized deviatoric strain), and Y all of size [i,j][nels]
     # Where matl_props is a vector, e.g. for Mooney-Rivlin matl_props could be [0.04 0.001 0.5]
     # Vol is a vector of size [nels] that contains information of the volume for each element
     # stressTerms and kinTerms are acquired from sensitivityFieldFunctions
@@ -121,8 +131,10 @@ end
 # Outputs
 # sens_IVW (sensitivity metric across all elements)
 
-function sensitivityPVW(x,K,V0,stressTerms,kinTerms,ξ;decouple=false)
+function sensitivityPVW(x,K,mat,V0,stressTerms,kinTerms,ξ;equalize=false)
     # Stress term evaluation at K
+    Φ = mat[1]
+    Y = mat[2]
     κ = ξ[end]
     κ = κ == Inf ? 0 : κ # Incompressiblity check
     ξᵢ∂²W_∂K₁∂ξᵢ = κ*stressTerms[1,end].(K[1]) # ∂W/∂K₁
@@ -130,30 +142,46 @@ function sensitivityPVW(x,K,V0,stressTerms,kinTerms,ξ;decouple=false)
     ξᵢ∂²W_∂K₃∂ξᵢ = sum(map(i -> ξ[i]*stressTerms[3,i].(K[2],K[3]), 1:length(ξ)-1)) # ∂W/∂K₃
 
     # Internal virtual work (IVW) evaluation
-    if !decouple
-        IVW_bar = zeros(length(x))
-        for i = 1:length(ξ) # ξᵢ
-            for j = 1:length(K) # Kⱼ
-                if i == length(ξ) && j == 1
-                    IVW_bar .+= 3*V0.*(x.^2).*ξᵢ∂²W_∂K₁∂ξᵢ.*kinTerms[1,i,j].(K[1])
-                elseif i != length(ξ) && j != 1 
-                    IVW_bar .+= V0.*(x.^2).*(ξᵢ∂²W_∂K₂∂ξᵢ.*kinTerms[2,i,j].(K[2],K[3]) .+ (9*(ones(length(x)).-(K[3].^2))./(K[2].^2)).*ξᵢ∂²W_∂K₃∂ξᵢ.*kinTerms[3,i,j].(K[2],K[3]))
+    IVW_bar = Array{Vector{Float64}}(undef,length(ξ),length(K))
+    for i = 1:length(ξ) # ξᵢ
+        for j = 1:length(K) # Kⱼ
+            IVW_bar[i,j] = zeros(length(x))
+            if i == length(ξ) && j == 1
+                IVW_bar[i,j] += 3*V0.*(x.^3).*ξᵢ∂²W_∂K₁∂ξᵢ.*kinTerms[1,i,j].(K[1])
+                if equalize
+                    I_mat = [zeros(length(x)) for _ in 1:3, _ in 1:3]
+                    for m in 1:3
+                        for n in 1:3
+                            if m == n
+                                I_mat[m,n] = ones(length(x))
+                            end
+                        end
+                    end
+                    # Construct the virtual fields here vf[i,j][el]
+                    vf = Array{Vector{Float64}}(undef,3,3)
+                    for m in 1:3
+                        for n in 1:3
+                            vf[m,n] = kinTerms[1,i,j].(K[1]).*I_mat[m,n]
+                        end
+                    end
+                    η_scale = equalizeEta(vf,K[1],x,V0)
+                    IVW_bar[i,j] = η_scale*IVW_bar[i,j]
+                end
+            elseif i != length(ξ) && j != 1 
+                IVW_bar[i,j] += V0.*(x.^3).*(ξᵢ∂²W_∂K₂∂ξᵢ.*kinTerms[2,i,j].(K[2],K[3]) .+ (9*(ones(length(x)).-(K[3].^2))./(K[2].^2)).*ξᵢ∂²W_∂K₃∂ξᵢ.*kinTerms[3,i,j].(K[2],K[3]))
+                if equalize
+                    # Construct the virtual fields here vf[i,j][el]
+                    vf = Array{Vector{Float64}}(undef,3,3)
+                    for m in 1:3
+                        for n in 1:3
+                            vf[m,n] = kinTerms[2,i,j].(K[2],K[3]).*Φ[m,n] + kinTerms[3,i,j].(K[2],K[3]).*Y[m,n]./K[2]
+                        end
+                    end
+                    η_scale = equalizeEta(vf,K[1],x,V0)
+                    IVW_bar[i,j] = η_scale*IVW_bar[i,j]
                 end
             end
-        end
-        IVW_bar = IVW_bar/sum(V0.*x) # Volume-weighted element-wise sensitivity metric of all IVW fields
-    else
-        IVW_bar = Vector{Vector{Float64}}(undef,length(ξ))
-        for i = 1:length(ξ) # ξᵢ
-            IVW_bar[i] = zeros(length(x))
-            for j = 1:length(K) # Kⱼ
-                if i == length(ξ) && j == 1
-                    IVW_bar[i] .+= 3*V0.*(x.^2).*ξᵢ∂²W_∂K₁∂ξᵢ.*kinTerms[1,i,j].(K[1])
-                elseif i != length(ξ) && j != 1 
-                    IVW_bar[i] .+= V0.*(x.^2).*(ξᵢ∂²W_∂K₂∂ξᵢ.*kinTerms[2,i,j].(K[2],K[3]) .+ (9*(ones(length(x)).-(K[3].^2))./(K[2].^2)).*ξᵢ∂²W_∂K₃∂ξᵢ.*kinTerms[3,i,j].(K[2],K[3]))
-                end
-            end
-            IVW_bar[i] = IVW_bar[i]./sum(V0.*x)
+            IVW_bar[i,j] = IVW_bar[i,j]./sum(V0.*x)
         end
     end
     return IVW_bar
