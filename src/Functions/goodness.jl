@@ -142,48 +142,55 @@ function sensitivityPVW(x,K,mat,V0,stressTerms,kinTerms,ξ;equalize=false)
     ξᵢ∂²W_∂K₃∂ξᵢ = sum(map(i -> ξ[i]*stressTerms[3,i].(K[2],K[3]), 1:length(ξ)-1)) # ∂W/∂K₃
 
     # Internal virtual work (IVW) evaluation
-    IVW_bar = Array{Vector{Float64}}(undef,length(ξ),length(K))
+    IVW_bar = []
     for i = 1:length(ξ) # ξᵢ
         for j = 1:length(K) # Kⱼ
-            IVW_bar[i,j] = zeros(length(x))
             if i == length(ξ) && j == 1
-                IVW_bar[i,j] += 3*V0.*(x.^3).*ξᵢ∂²W_∂K₁∂ξᵢ.*kinTerms[1,i,j].(K[1])
-                if equalize
-                    I_mat = [zeros(length(x)) for _ in 1:3, _ in 1:3]
+                if !equalize
+                    IVW_bar = vcat(IVW_bar,[3*V0.*(x.^3).*ξᵢ∂²W_∂K₁∂ξᵢ.*kinTerms[1,i,j].(K[1])])
+                else
+                    I_mat = []
                     for m in 1:3
                         for n in 1:3
-                            if m == n
-                                I_mat[m,n] = ones(length(x))
-                            end
+                            if m == n; I_mat=vcat(I_mat,[ones(length(x))])
+                            else; I_mat=vcat(I_mat,[zeros(length(x))])
+                            end;
                         end
                     end
+                    I_mat=reshape(I_mat,(3,3))
                     # Construct the virtual fields here vf[i,j][el]
-                    vf = Array{Vector{Float64}}(undef,3,3)
+                    vf = []
                     for m in 1:3
                         for n in 1:3
-                            vf[m,n] = kinTerms[1,i,j].(K[1]).*I_mat[m,n]
+                            vf = vcat(vf,[kinTerms[1,i,j].(K[1]).*I_mat[m,n]])
                         end
                     end
+                    vf = permutedims(reshape(vf,(3,3)),[2,1])
                     η_scale = equalizeEta(vf,K[1],x,V0)
-                    IVW_bar[i,j] = η_scale*IVW_bar[i,j]
+                    IVW_bar = vcat(IVW_bar,[η_scale*(3*V0.*(x.^3).*ξᵢ∂²W_∂K₁∂ξᵢ.*kinTerms[1,i,j].(K[1]))/sum(V0.*x)])
                 end
             elseif i != length(ξ) && j != 1 
-                IVW_bar[i,j] += V0.*(x.^3).*(ξᵢ∂²W_∂K₂∂ξᵢ.*kinTerms[2,i,j].(K[2],K[3]) .+ (9*(ones(length(x)).-(K[3].^2))./(K[2].^2)).*ξᵢ∂²W_∂K₃∂ξᵢ.*kinTerms[3,i,j].(K[2],K[3]))
-                if equalize
+                if !equalize
+                    IVW_bar = vcat(IVW_bar,[V0.*(x.^3).*(ξᵢ∂²W_∂K₂∂ξᵢ.*kinTerms[2,i,j].(K[2],K[3]) .+ (9*(ones(length(x)).-(K[3].^2))./(K[2].^2)).*ξᵢ∂²W_∂K₃∂ξᵢ.*kinTerms[3,i,j].(K[2],K[3]))])
+                else
                     # Construct the virtual fields here vf[i,j][el]
-                    vf = Array{Vector{Float64}}(undef,3,3)
+                    vf = []
                     for m in 1:3
                         for n in 1:3
-                            vf[m,n] = kinTerms[2,i,j].(K[2],K[3]).*Φ[m,n] + kinTerms[3,i,j].(K[2],K[3]).*Y[m,n]./K[2]
+                            vf = vcat(vf,[kinTerms[2,i,j].(K[2],K[3]).*Φ[m,n] + kinTerms[3,i,j].(K[2],K[3]).*Y[m,n]./K[2]])
                         end
                     end
+                    vf = permutedims(reshape(vf,(3,3)),[2,1])
                     η_scale = equalizeEta(vf,K[1],x,V0)
-                    IVW_bar[i,j] = η_scale*IVW_bar[i,j]
+                    IVW_bar = vcat(IVW_bar,[η_scale*(V0.*(x.^3).*(ξᵢ∂²W_∂K₂∂ξᵢ.*kinTerms[2,i,j].(K[2],K[3]) .+ (9*(ones(length(x)).-(K[3].^2))./(K[2].^2)).*ξᵢ∂²W_∂K₃∂ξᵢ.*kinTerms[3,i,j].(K[2],K[3])))/sum(V0.*x)])
                 end
+            else
+                IVW_bar = vcat(IVW_bar,[zeros(length(x))])
             end
             IVW_bar[i,j] = IVW_bar[i,j]./sum(V0.*x)
         end
     end
+    IVW_bar = permutedims(reshape(IVW_bar,(length(K),length(ξ))),[2,1])
     return IVW_bar
 end
 
