@@ -189,7 +189,7 @@ function sensitivityPVW(x,K,mat,V0,stressTerms,kinTerms,ξ;equalize=false)
             end
         end
     end
-    IVW_bar = permutedims(reshape(IVW_bar,(3,3)),[2,1])
+    IVW_bar = permutedims(reshape(IVW_bar,(length(K),length(ξ))),[2,1])
     return IVW_bar
 end
 
