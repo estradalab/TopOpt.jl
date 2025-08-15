@@ -11,10 +11,14 @@ end
     u::AbstractVector{T} # displacement vector
     F::AbstractVector # deformation gradient tensor
     dudx_tmp::AbstractVector # directional derivative
-    solver::AbstractHyperelasticSolver
+    solver::AbstractHyperelasticDisplacementSolver
     global_dofs::AbstractVector{<:Integer}
     fevals::Int
     maxfevals::Int
+    ek::ElementK
+    eg::TopOpt.Functions.Elementg
+    Assemble_K::AssembleK
+    Assemble_g::TopOpt.Functions.Assemblef
 end
 
 function Base.show(::IO, ::MIME{Symbol("text/plain")}, ::Displacement)
@@ -23,10 +27,6 @@ end
 
 function Base.show(::IO, ::MIME{Symbol("text/plain")}, ::HyperelasticDisplacement)
     return println("TopOpt displacement function for hyperelastic strain regimes")
-end
-
-struct DisplacementResult{T,N,A<:AbstractArray{T,N}} <: AbstractArray{T,N}
-    u::A
 end
 
 Base.length(u::DisplacementResult) = length(u.u)
@@ -51,7 +51,7 @@ function Displacement(solver::AbstractFEASolver; maxfevals=10^8)
     return Displacement(u, dudx_tmp, solver, global_dofs, 0, maxfevals)
 end
 
-function Displacement(solver::AbstractHyperelasticSolver; maxfevals=10^8)
+function Displacement(solver::AbstractHyperelasticDisplacementSolver; maxfevals=10^8)
     dim = TopOptProblems.getdim(solver.problem)
     dim == 3 || throw("2D hyperelastic FEA is not supported yet.")
     T = eltype(solver.u)
@@ -62,7 +62,11 @@ function Displacement(solver::AbstractHyperelasticSolver; maxfevals=10^8)
     u = zeros(T, total_ndof)
     F = [zeros(typeof(solver.elementinfo.Fes[1])) for _ in 1:total_ndof/dim]
     dudx_tmp = zeros(T, length(solver.vars))
-    return HyperelasticDisplacement(u, F, dudx_tmp, solver, global_dofs, 0, maxfevals)
+    ek = ElementK(solver) 
+    eg = TopOpt.Functions.Elementg(solver)
+    Assemble_K = AssembleK(solver.problem) 
+    Assemble_g = TopOpt.Functions.Assemblef(solver.problem) 
+    return HyperelasticDisplacement(u, F, dudx_tmp, solver, global_dofs, 0, maxfevals, ek, eg, Assemble_K, Assemble_g)
 end
 
 """
@@ -87,13 +91,13 @@ function (dp::HyperelasticDisplacement{T})(x::PseudoDensities) where {T}
     @unpack penalty, problem, xmin = solver
     dp.fevals += 1
     @assert length(global_dofs) == ndofs_per_cell(solver.problem.ch.dh)
-    solver.vars .= x.x
+    solver.vars = x.x
     solver()
     return DisplacementResult(copy(solver.u)),copy(solver.F) #, copy(solver.F) # I need to add F support
 end
 
 """
-rrule for autodiff.
+rrule for linear elastic solver autodiff.
     
 du/dxe = -K^-1 * dK/dxe * u
 d(u)/d(x_e) = - K^-1 * d(K)/d(x_e) * u
@@ -129,29 +133,31 @@ function ChainRulesCore.rrule(dp::Displacement, x::PseudoDensities)
     end
 end
 
+#TODO ensure that this works with Neumann boundary conditions
+
 function ChainRulesCore.rrule(dp::HyperelasticDisplacement, x::PseudoDensities)
-    forward(x) = dp(x)[1]
-    @unpack solver = dp
-    ek = ElementK(solver) 
-    Assemble_K = AssembleK(solver.problem) 
-    ef = ElementF(solver)
-    Assemble_g = AssembleG(solver) 
+    @unpack ek, eg, Assemble_K, Assemble_g, solver = dp
+    full_output = dp(x)
+    u = full_output[1]
+    forward(x) = dp(PseudoDensities(x))[1]
     function conditions(x::PseudoDensities, u::TopOpt.Functions.DisplacementResult)
-        K = Assemble_K(ek(x, u))
-        f = Assemble_g(ef(u))
-        K_, f_ = apply_boundary_with_meandiag!(K, solver.problem.ch, f, false)
-        c = K_ * u - f_
-        return c
-    end
+        K_ = Assemble_K(ek(x,u))
+        g_ = Assemble_g(eg(x,u))
+        _, g = apply_boundary_with_meandiag!(copy(K_), solver.problem.ch, copy(g_), true)
+        return g
+    end                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             
     function solver_wrapper(A, b)
-        return Krylov.gmres(A, b; rtol=1e-10)
+        A_mat = Matrix(A)
+        for pdof in solver.problem.ch.prescribed_dofs
+            A_mat[pdof,pdof] = 1.0
+        end
+        return Krylov.gmres(A_mat, b; itmax=10000) 
     end
     implicit = ImplicitDifferentiation.ImplicitFunction(forward, conditions, solver_wrapper)
     function pullback(Δ)
-        J = Zygote.jacobian(implicit, x)[1] 
-        x̄ = J' * Δ  
-        return (NoTangent(), x̄, NoTangent())
+        _, back = Zygote.rrule_via_ad(Zygote.ZygoteRuleConfig(),implicit, x)
+        _, x̄ = back(Δ[1])
+        return NoTangent(), Tangent{typeof(x)}(; x=x̄), NoTangent() # F does have a tangent, this is just a placeholder
     end
-
-    return forward(x), pullback
+    return full_output, pullback
 end

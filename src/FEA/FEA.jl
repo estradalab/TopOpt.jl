@@ -9,7 +9,7 @@ using Parameters: @unpack
 
 export AbstractFEASolver,
     AbstractDisplacementSolver,
-    AbstractHyperelasticSolver,
+    AbstractHyperelasticDisplacementSolver,
     DirectDisplacementSolver,
     PCGDisplacementSolver,
     StaticMatrixFreeDisplacementSolver,

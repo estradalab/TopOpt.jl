@@ -1,6 +1,6 @@
 using ProgressMeter
 
-abstract type AbstractHyperelasticSolver <: AbstractFEASolver end
+abstract type AbstractHyperelasticDisplacementSolver <: AbstractDisplacementSolver end
 
 mutable struct HyperelasticDisplacementSolver{
     T,
@@ -10,15 +10,17 @@ mutable struct HyperelasticDisplacementSolver{
     TG<:GlobalFEAInfo_hyperelastic{T},
     TE<:ElementFEAInfo_hyperelastic{dim,T},
     Tu<:AbstractVector{T},
-    TF<:AbstractVector{<:AbstractMatrix{T}},
-} <: AbstractHyperelasticSolver
-    mp::ConstitutiveLaw
+    TF<:AbstractVector{<:Any},
+    TC<:ConstitutiveLaw, 
+    TV<:AbstractVector{T}
+} <: AbstractHyperelasticDisplacementSolver
+    mp::TC  
     problem::TP2
     globalinfo::TG
     elementinfo::TE
-    u::Tu # JGB: u --> u0
+    u::Tu
     F::TF
-    vars::Tu
+    vars::TV
     penalty::TP1
     prev_penalty::TP1
     xmin::T
@@ -35,14 +37,16 @@ mutable struct HyperelasticNearlyIncompressibleDisplacementSolver{
     TE<:ElementFEAInfo_hyperelastic{dim,T},
     Tu<:AbstractVector{T},
     TF<:AbstractVector{<:AbstractMatrix{T}},
-} <: AbstractHyperelasticSolver
-    mp::ConstitutiveLaw
+    TC<:ConstitutiveLaw, 
+    TV<:AbstractVector{T}
+} <: AbstractHyperelasticDisplacementSolver
+    mp::TC 
     problem::TP2
     globalinfo::TG
     elementinfo::TE
     u::Tu # JGB: u --> u0
     F::TF
-    vars::Tu
+    vars::TV
     penalty::TP1
     prev_penalty::TP1
     xmin::T
@@ -161,7 +165,7 @@ function (s::HyperelasticDisplacementSolver{T})(
             error("Reached maximum number of allowed time step iterations ($TS_MAXITER_ABS), aborting")
         end
         try
-            HyperelasticSolverCore(ts;update_firstelementinfo=(iter_ts != 1 || ts != s.ts0))
+            HyperelasticSolverCore(ts)
             conv[iter_ts] = 1
             if sum(conv[1:iter_ts]) == iter_ts || (iter_ts - findlast(x -> x == 0, conv[1:iter_ts-1])) ≥ DELAY_UP # increase Δts if it's never failed or if it's been 'inc_delay' or more successful iterations since last divergence
                 Δts *= INC_UP

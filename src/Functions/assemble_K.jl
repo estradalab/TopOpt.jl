@@ -48,7 +48,7 @@ end
 Let's consider composite function `g(F(...))`, where
 `F` can be a struct-valued, vector-valued, or matrix-valued function.
 In the case here, `F = AssembleK`. Then `rrule` wants us to find `g`'s derivative
-w.r.t each *output* of `F`, given `g`'s derivative w.r.t. each *input* of `F`.
+w.r.t each *input* of `F`, given `g`'s derivative w.r.t. each *output* of `F`.
 Here, `F: K_e -> K_ij = sum_e K_e_ij`. Then `dK_ij/dK_e_ij = 1`.
 And we know `Delta_ij = dg/dK_ij`.
 

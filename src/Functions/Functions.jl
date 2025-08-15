@@ -19,6 +19,7 @@ using Plots:heatmap
 using ThreadsX
 using ImplicitDifferentiation
 using Krylov
+using IterativeSolvers
 const AD = AbstractDifferentiation
 
 export Volume,
@@ -37,8 +38,10 @@ export Volume,
     hadamard!,
     TrussStress,
     AssembleK,
+    Assemblef,
     TrussElementKσ,
     ElementK,
+    Elementg,
     apply_boundary_with_zerodiag!,
     apply_boundary_with_meandiag!,
     NeuralNetwork,
@@ -61,14 +64,22 @@ export Volume,
     Entropy_Calc,
     Entropy,
     SMu_gen, 
-    SAlpha_gen,
-    ElementG,
-    AssembleF,
-    ElementF
+    SAlpha_gen
 
 const to = TimerOutput()
 
 abstract type AbstractFunction{T} <: Nonconvex.NonconvexCore.AbstractFunction end
+struct DisplacementResult{T,N,A<:AbstractArray{T,N}} <: AbstractArray{T,N}
+    u::A
+end
+
+# buckling / hyperelasticity
+include("apply_boundary.jl")
+include("assemble_K.jl")
+include("assemble_f.jl")
+include("element_ksigma.jl")
+include("element_k.jl")
+include("element_ges.jl")
 
 include("function_utils.jl")
 include("compliance.jl")
@@ -81,13 +92,7 @@ include("block_compliance.jl")
 # stress
 include("stress_tensor.jl")
 
-# buckling
-include("apply_boundary.jl")
-include("assemble_K.jl")
-include("element_ksigma.jl")
-include("element_k.jl")
-
-# Goodness related
+# goodness related
 include("defgrad.jl")
 include("goodness.jl")
 
@@ -98,7 +103,4 @@ include("neural.jl")
 
 include("interpolation.jl")
 
-include("assemble_g.jl")
-include("element_ges.jl")
-include("element_fes.jl")
 end

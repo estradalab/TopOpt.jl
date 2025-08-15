@@ -1,44 +1,44 @@
-@params mutable struct ElementG{T} <: AbstractFunction{T}
-    solver::TopOpt.FEA.HyperelasticDisplacementSolver
-    element_g::AbstractVector{T}
-    Kesize::Number
-    body_force::Vector{Float64}
+@params mutable struct Elementg{T} <: AbstractFunction{T}
+    solver::HyperelasticDisplacementSolver
+    ges::AbstractVector{<:AbstractVector{T}}
+    ges_0::AbstractVector{<:AbstractVector{T}}
+    penalty::AbstractPenalty{T}
+    xmin::T
+    gesize::Int
+    body_force::AbstractVector{T}
     cellvalues::CellScalarValues
     cellvaluesV::CellVectorValues
 end
 
-function Base.show(::IO, ::MIME{Symbol("text/plain")}, ::ElementG)
+function Base.show(::IO, ::MIME{Symbol("text/plain")}, ::Elementg)
     return println("TopOpt element hyperelastic force residual function")
 end
 
-function ElementG(solver)
+function Elementg(solver::HyperelasticDisplacementSolver)
+    T = eltype(solver.elementinfo.ges[1])
+    penalty = getpenalty(solver)
+    xmin = solver.xmin
     quad_order=FEA.default_quad_order(solver.problem)
     dims = TopOptProblems.getdim(solver.problem)
     geom_order = TopOptProblems.getgeomorder(solver.problem)
     refshape = Ferrite.getrefshape(solver.problem.ch.dh.field_interpolations[1])
     interpolation_space = Ferrite.Lagrange{dims,refshape,geom_order}()
     quadrature_rule = Ferrite.QuadratureRule{dims,refshape}(quad_order) 
-    nel = getncells(solver.problem.ch.dh.grid)
-    T_ = TopOptProblems.floattype(solver.problem)
-    Kes_solver = solver.elementinfo.Kes 
-    _Ke1 = rawmatrix(Kes_solver[1])
-    mat_type = _Ke1 isa Symmetric ? typeof(_Ke1.data) : typeof(_Ke1)
     cellvalues = CellScalarValues(quadrature_rule, interpolation_space)
     cellvaluesV = Ferrite.CellVectorValues(quadrature_rule, interpolation_space) 
     n_basefuncs = getnbasefunctions(cellvalues)
-    Kesize = dims * n_basefuncs
+    gesize = dims * n_basefuncs
     ρ = TopOptProblems.getdensity(solver.problem)
-    MatrixType, VectorType = TopOptProblems.gettypes(T_, Val{mat_type}, Val{Kesize};hyperelastic=true)
     g = [0.0, 9.81, 0.0]
     body_force = ρ .* g
-    ges=[zeros(StaticArraysCore.SVector{ndofs_per_cell(solver.problem.ch.dh), Float64}) for i in 1:length(solver.problem.varind)]
-    return  ElementG(solver, ges, Kesize, body_force, cellvalues, cellvaluesV) 
+    ges_0 = [zeros(T, ndofs_per_cell(solver.problem.ch.dh)) for i in 1:length(solver.problem.varind)]
+    ges = [similar(x) for x in ges_0]
+    return  Elementg(solver, ges, ges_0, penalty, xmin, gesize, body_force, cellvalues, cellvaluesV) 
 end
 
-function (eg::ElementG)(ue, cellvaluesV, cellvalues)
-    @unpack solver, Kesize, body_force, cellvalues, cellvaluesV=eg    
-
-    ge=zeros(Number,(ndofs_per_cell(solver.problem.ch.dh)))
+function (eg::Elementg)(xe::Number,ue::AbstractVector{<:Number})
+    @unpack solver, gesize, body_force, cellvalues, cellvaluesV, xmin, penalty = eg
+    ge = zeros(eltype(ue),(ndofs_per_cell(solver.problem.ch.dh)))
     for q_point in 1:getnquadpoints(cellvalues)
         dΩ = getdetJdV(cellvalues, q_point)
         ∇u = function_gradient(cellvaluesV, q_point, ue) # JGB add (NEEDS TO BE CHECKED!!)
@@ -46,93 +46,76 @@ function (eg::ElementG)(ue, cellvaluesV, cellvalues)
         C = tdot(F) # JGB add 
         S, ∂S∂C = TopOptProblems.constitutive_driver(C, solver.mp) # JGB add 
         P = F ⋅ S # JGB add 
-        for b in 1:Kesize
+        for b in 1:gesize
             ∇ϕb = shape_gradient(cellvaluesV, q_point, b) # JGB: like ∇δui
             ϕb = shape_value(cellvaluesV, q_point, b)
             ge[b] += ( ∇ϕb ⊡ P - ϕb ⋅ body_force ) * dΩ
         end
     end
-    return ge
+    if PENALTY_BEFORE_INTERPOLATION
+        px = density(penalty(xe), xmin)
+    else
+        px = penalty(density(xe), xmin)
+    end
+    return px*ge
 end
 
-function (eg::ElementG)(u::TopOpt.Functions.DisplacementResult{T, N, V}) where {T, N, V}
-@unpack solver, element_g, cellvalues, cellvaluesV=eg    
-    element_g=Vector{Vector{Float64}}()
+function (eg::Elementg{Teg})(x::PseudoDensities,u::TopOpt.Functions.DisplacementResult{T, N, V}) where {Teg, T, N, V}
+@unpack solver, ges, ges_0, cellvalues, cellvaluesV = eg  
+    ges = copy(ges_0)  
     celliterator = CellIterator(solver.problem.ch.dh)
     for (ci, cell) in enumerate(celliterator)
         dofs=celldofs(cell)
-        _reinit!(cellvalues, cell)
-        _reinit!(cellvaluesV, cell)
-        cell_g=eg(u.u[dofs], cellvaluesV, cellvalues)
-        element_g=vcat(element_g,[cell_g])
+        reinit!(cellvalues, cell)
+        reinit!(cellvaluesV, cell)
+        cell_g = eg(x.x[ci],u.u[dofs])
+        ges[ci] += cell_g
     end
-    return element_g
+    return ges
 end
 
-function (eg::ElementG)(u::AbstractArray)
-    @unpack solver=eg 
-    @assert length(u)==ndofs(solver.problem.ch.dh)
-return eg(DisplacementResult(u)) ;end
-
-
-function _reinit!(cellvalues::Ferrite.CellScalarValues,cell::CellIterator)
-    reinit!(cellvalues, cell)
-    return cellvalues
-end
-
-function _reinit!(cellvaluesV::Ferrite.CellVectorValues,cell::CellIterator)
-    reinit!(cellvaluesV, cell)
-    return cellvaluesV
-end
-
-function ChainRulesCore.rrule(::typeof(_reinit!), cellvalues::Ferrite.CellScalarValues, cell::CellIterator)
-    function pullback_fn(Δ)
-        return NoTangent(), NoTangent(),NoTangent()
-    end
-    return reinit!(cellvalues, cell), pullback_fn
-end
-
-function ChainRulesCore.rrule(::typeof(_reinit!), cellvaluesV::Ferrite.CellVectorValues, cell::CellIterator)
-    function pullback_fn(Δ)
-        return NoTangent(), NoTangent(),NoTangent()
-    end
-    return reinit!(cellvaluesV, cell), pullback_fn
-end
-
-function ChainRulesCore.rrule(::typeof(⊡), A::SecondOrderTensor, B::SecondOrderTensor)
-    project_to_A = ChainRulesCore.ProjectTo(A)
-    project_to_B = ChainRulesCore.ProjectTo(B)
-    function pullback_fn(Δ)
-        return NoTangent(), @thunk(project_to_A(Δ * B)), @thunk(project_to_B(Δ  * A))
-    end
-    return A ⊡ B, pullback_fn
-end
-
-function ChainRulesCore.rrule(eg::ElementG, u::DisplacementResult)
-    @unpack solver, cellvalues, cellvaluesV=eg    
-    ges = eg(u)
+function ChainRulesCore.rrule(eg::Elementg, x::PseudoDensities, u::DisplacementResult)
+    @unpack solver, cellvalues, cellvaluesV = eg    
+    ges = eg(x,u)
     function pullback_fn(Δ)
         celliterator = CellIterator(solver.problem.ch.dh)
-        Δu = zeros(length(u))
+        Δu = zeros(length(u.u))
         Δu_threaded = [zeros(length(u.u)) for _ in 1:Threads.nthreads()]
+        Δx = zeros(length(x.x))
+        Δx_threaded = [zeros(length(x.x)) for _ in 1:Threads.nthreads()]
+        sample_dofs = celldofs(first(CellIterator(solver.problem.ch.dh)))
+        ndof = length(sample_dofs) 
+        nel = length(x.x)
+        jac_cell_ue = zeros(ndof, ndof)
+        der_cell_xe = zeros(nel)
         for (ci, cell) in enumerate(celliterator)  
             dofs=celldofs(cell)
-            _reinit!(cellvalues, cell)
-            _reinit!(cellvaluesV, cell)
-            ges_cell_fn_ue = ue -> vec(eg(ue, cellvaluesV, cellvalues))
-            jacobian_options=ForwardDiff.JacobianConfig(ges_cell_fn_ue,u.u[dofs],ForwardDiff.Chunk{Int64(round(length(dofs)))}())
-            jac_cell_ue = ForwardDiff.jacobian(ges_cell_fn_ue, (u.u[dofs]),jacobian_options)
-            ThreadsX.foreach(1:ndofs_per_cell(solver.problem.ch.dh)) do i
-                tid = Threads.threadid()
-                Δu_threaded[tid][dofs[i]] += dot(jac_cell_ue[:, i], vec(Δ[ci]))
-            end
+            reinit!(cellvalues, cell)
+            reinit!(cellvaluesV, cell)
+            ges_cell_fn_ue = ue -> vec(eg(x.x[ci],ue))
+            jacobian_options = ForwardDiff.JacobianConfig(ges_cell_fn_ue,u.u[sample_dofs])
+            ForwardDiff.jacobian!(jac_cell_ue, ges_cell_fn_ue, u.u[dofs], jacobian_options)
+            ges_cell_fn_xe = xe -> vec(eg(xe,u.u[dofs]))
+            der_cell_xe = ForwardDiff.derivative(ges_cell_fn_xe, x.x[ci])
+
+            tid = Threads.threadid()
+            Δu_threaded[tid][dofs] .+= jac_cell_ue' * vec(Δ[ci])
+            Δx_threaded[tid][ci] +=  dot(der_cell_xe,vec(Δ[ci]))
         end
-        Δu = ThreadsX.mapreduce(identity, +, Δu_threaded)
-        return Tangent{typeof(eg)}(;
-        solver=NoTangent(),
-        element_g=NoTangent()
-    ),
-        Δu
+        Δu = mapreduce(identity, +, Δu_threaded) 
+        Δx = mapreduce(identity, +, Δx_threaded)
+        return  Tangent{typeof(eg)}(;
+            solver=NoTangent(),
+            ges=Δ,
+            ges_0=NoTangent(),
+            penalty=NoTangent(),
+            xmin=NoTangent(),
+            gesize=NoTangent(),
+            body_force=NoTangent(),
+            cellvalues=NoTangent(),
+            cellvaluesV=NoTangent()),
+            Δx,
+            Δu
     end
     return ges, pullback_fn
 end 

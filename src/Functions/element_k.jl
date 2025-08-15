@@ -12,7 +12,7 @@ Base.:*(x::ElementStiffnessMatrix, y) = ElementStiffnessMatrix(x.x * y)
     Kes_0::AbstractVector{<:AbstractMatrix{T}} # un-interpolated
     penalty::AbstractPenalty{T}
     xmin::T
-    Kesize::Integer
+    Kesize::Int
     cellvalues::CellScalarValues
     cellvaluesV::CellVectorValues
 end
@@ -37,7 +37,8 @@ function ElementK(solver::AbstractDisplacementSolver)
     Kes_0 = mat_type[]
     for (cellidx, _) in enumerate(CellIterator(dh))
         _Ke = rawmatrix(Kes_solver[cellidx])
-        Ke0 = _Ke isa Symmetric ? _Ke.data : _Ke
+        # Ke0 = _Ke isa Symmetric ? _Ke.data : _Ke
+        Ke0 = _Ke isa Symmetric ? Matrix(_Ke) : _Ke # TEO edited this line
         Ke = similar(Ke0)
         push!(Kes_0, Ke0)
         push!(Kes, Ke)
@@ -107,13 +108,12 @@ function ChainRulesCore.rrule(ek::ElementK, x::PseudoDensities)
     return Kes, pullback_fn
 end 
 
-function ElementK(solver::AbstractHyperelasticSolver)
+function ElementK(solver::HyperelasticDisplacementSolver)
     @unpack elementinfo = solver
     dh = solver.problem.ch.dh 
     penalty = getpenalty(solver)
     xmin = solver.xmin
     solver.vars = ones(getncells(dh.grid))
-    # trigger Ke construction
     Kes_solver = solver.elementinfo.Kes
 
     _Ke1 = rawmatrix(Kes_solver[1])
@@ -140,25 +140,20 @@ function ElementK(solver::AbstractHyperelasticSolver)
     return ElementK(solver, Kes, Kes_0, penalty, xmin, Kesize, cellvalues,cellvaluesV)
 end
 
-function (ek::ElementK)(xe, ue,ci)
+function (ek::ElementK)(xe::Number, ue::AbstractVector{<:Number}, ci::Integer)
     @unpack xmin, penalty, Kesize, cellvalues,cellvaluesV  = ek
-    Fe = zeros(3,3)
-    collected_celliterator = collect(CellIterator(ek.solver.problem.ch.dh))
-    
-    reinit!(cellvalues, collected_celliterator[ci])
-    reinit!(cellvaluesV, collected_celliterator[ci])
- 
-    Ke_0 = Matrix{Number}(undef, Kesize, Kesize)
-    Ke_0 .= 0
+
+    T = promote_type(eltype(ue), typeof(xe))
+    Ke_0 = MMatrix{(Kesize), (Kesize), T}(undef)
+    Ke_0 .= 0.0
     for q_point in 1:getnquadpoints(cellvalues)
         dΩ = getdetJdV(cellvalues, q_point)
-        ∇u = function_gradient(cellvaluesV, q_point, ue) # JGB add (NEEDS TO BE CHECKED!!)
-        F = one(∇u) + ∇u # JGB add 
-        Fe += F*dΩ
-        C = tdot(F) # JGB add 
-        S, ∂S∂C = TopOptProblems.constitutive_driver(C, ek.solver.mp) # JGB add 
-        I = one(S) # JGB add 
-        ∂P∂F =  otimesu(I, S) + 2 * otimesu(F, I) ⊡ ∂S∂C ⊡ otimesu(F', I) # JGB add (neither P or F is symmetric so ∂P∂F will not either)
+        ∇u = function_gradient(cellvaluesV, q_point, ue)
+        F = one(∇u) + ∇u 
+        C = tdot(F) 
+        S, ∂S∂C = TopOptProblems.constitutive_driver(C, ek.solver.mp) 
+        I = one(S)
+        ∂P∂F =  otimesu(I, S) + 2 * otimesu(F, I) ⊡ ∂S∂C ⊡ otimesu(F', I)
         for b in 1:Kesize
             ∇ϕb = shape_gradient(cellvaluesV, q_point, b) # JGB: like ∇δui
             ∇ϕb∂P∂F = ∇ϕb ⊡ ∂P∂F # Hoisted computation # JGB add
@@ -179,10 +174,13 @@ end
 
 
 function (ek::ElementK{T})(x::PseudoDensities, u::DisplacementResult) where {T}
-    @unpack solver, Kes = ek
+    @unpack solver, Kes, Kes_0, cellvalues, cellvaluesV = ek
     @assert getncells(solver.problem.ch.dh.grid) == length(x)
+    Kes = copy(Kes_0)
     celliterator = CellIterator(solver.problem.ch.dh)
     for (ci, cell) in enumerate(celliterator)
+        reinit!(cellvalues, cell)
+        reinit!(cellvaluesV, cell)
         Kes[ci] = ek(x.x[ci], u[celldofs(cell)],ci)
     end
     element_Kes = TopOpt.convert(
@@ -196,7 +194,7 @@ function (ek::ElementK{T})(x::PseudoDensities, u::DisplacementResult) where {T}
 end
 
 function ChainRulesCore.rrule(ek::ElementK, x::PseudoDensities, u::DisplacementResult)
-    @unpack solver, Kes = ek
+    @unpack solver, Kes, Kesize, cellvalues, cellvaluesV = ek
     Kes = ek(x, u)
 
     """
@@ -213,42 +211,57 @@ function ChainRulesCore.rrule(ek::ElementK, x::PseudoDensities, u::DisplacementR
     function pullback_fn(Δ)
         Δx = similar(x.x)
         Δu_threaded = [zeros(length(u.u)) for _ in 1:Threads.nthreads()]
-        Δu = zeros(length(u.u)) 
-        cellarray = collect(enumerate(CellIterator(solver.problem.ch.dh)))
-        dofs_matrix=solver.problem.metadata.cell_dofs
-        ThreadsX.foreach(cellarray) do (ci, cell_)
-            dofs=dofs_matrix[:,ci]
-            ek_cell_fn_xe = xe -> reshape(ek(xe, u[dofs],ci),:)
-            jac_cell_xe = ForwardDiff.derivative(ek_cell_fn_xe, x.x[ci])
-            Δx[ci] = jac_cell_xe' * reshape(Δ[ci],:)
 
+        dh = solver.problem.ch.dh
+        cellarray = collect(enumerate(CellIterator(dh)))
+        dofs_matrix = solver.problem.metadata.cell_dofs
+        ndof = ndofs_per_cell(dh)
+        Δvec = map(ci -> vec(Δ[ci]), 1:length(cellarray))  # cache reshaped Δ
+        jac_u_threaded = [zeros(eltype(u.u), (ndof*Kesize, ndof)) for _ in 1:Threads.nthreads()]
+        ci_ref = Ref(1)
+        u_ref = Ref(@views u.u[dofs_matrix[:, 1]])
+        ek_cell_fn_ue = ue -> reshape(ek(x.x[ci_ref[]], ue, ci_ref[]), :)
+        cfg = ForwardDiff.JacobianConfig(ek_cell_fn_ue, u_ref[], ForwardDiff.Chunk{12}())
+        y=zeros(eltype(u.u), (ndof*Kesize))
+        let cellvalues=cellvalues, cellvaluesV=cellvaluesV, 
+            y=y, cfg=cfg, jac_u_threaded=jac_u_threaded, 
+            Δvec=Δvec, ndof=ndof, dofs_matrix=dofs_matrix, 
+            cellarray=cellarray, Δu_threaded=Δu_threaded, Δx=Δx, u=u    
 
-
-            ek_cell_fn_ue = ue -> reshape(ek(x.x[ci], ue,ci),:)
-            jacobian_options=ForwardDiff.JacobianConfig(
-                ek_cell_fn_ue,u.u[dofs],
-                ForwardDiff.Chunk{length(dofs)}()
-            )
-            jac_cell_ue = ForwardDiff.jacobian(
-                ek_cell_fn_ue, 
-                u.u[dofs],
-                jacobian_options
-            )
-            tid = Threads.threadid()
-            ThreadsX.foreach(1:ndofs_per_cell(solver.problem.ch.dh)) do i
-                Δu_threaded[tid][dofs[i]] += jac_cell_ue[:, i]' * reshape(Δ[ci],:)
+            foreach(cellarray) do (ci, cell)
+                reinit!(cellvalues, cell)
+                reinit!(cellvaluesV, cell)
+                tid = Threads.threadid()
+                jac_u = jac_u_threaded[tid]
+                @views dofs = dofs_matrix[:, ci]
+                Δci = Δvec[ci]
+        
+                let ci=ci, x=x, ek=ek
+                    # Compute dK/dx
+                    ek_cell_fn_xe = xe -> reshape(ek(xe, @views(u[dofs]), ci),:)
+                    jac_x = ForwardDiff.derivative!(y, ek_cell_fn_xe, x.x[ci])
+                    Δx[ci] = jac_x' * Δci
+                    # Compute dK/du
+                    ci_ref[] = ci
+                    u_ref[] = @views u.u[dofs]
+                
+                    ForwardDiff.jacobian!(jac_u, ek_cell_fn_ue, u_ref[], cfg)
+                end 
+                Δu_local = Δu_threaded[tid]
+                @inbounds @simd for i in 1:ndof
+                    Δu_local[dofs[i]] += dot(@views(jac_u[:, i]), Δci)
+                end
             end
+        end
+        Δu = mapreduce(identity, +, Δu_threaded)
 
-        end                                                                                                                                                                                                                                                                                                 
-        Δu = ThreadsX.mapreduce(identity, +, Δu_threaded)
         return Tangent{typeof(ek)}(;
             solver=NoTangent(),
             Kes=Δ,
             Kes_0=NoTangent(),
             penalty=NoTangent(),
             xmin=NoTangent(),
-        ),
-        Δx, Δu
+        ), Δx, Δu
     end
     return Kes, pullback_fn
 end
