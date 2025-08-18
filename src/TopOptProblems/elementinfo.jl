@@ -52,20 +52,23 @@ struct ElementFEAInfo{
     cells::Tc3
 end
 
-@params struct ElementFEAInfo_hyperelastic{dim,T}
-    Kes::AbstractVector{<:AbstractMatrix{T}}
-    fes::AbstractVector{<:AbstractVector{T}}
-    ges::AbstractVector{<:AbstractVector{T}}
-    fixedload::AbstractVector{T}
-    Fes::AbstractVector{<:AbstractMatrix{T}}
-    cellvolumes::AbstractVector{T}
-    cellvalues::CellValues{dim,T,<:Any}
-    facevalues::FaceValues{<:Any,T,<:Any}
-    metadata::Metadata
-    black::AbstractVector
-    white::AbstractVector
-    varind::AbstractVector{Int}
-    cells::Any
+struct ElementFEAInfo_hyperelastic{dim,T,TK<:AbstractVector{<:AbstractMatrix{T}},Tf<:AbstractVector{<:AbstractVector{T}},
+    Tg<:AbstractVector{<:AbstractVector{T}},Tfl<:AbstractVector{T},TF<:AbstractVector{<:AbstractMatrix{T}},
+    Tcv1<:AbstractVector{T},Tcv2<:CellValues{dim,T,<:Any},Tfv<:FaceValues{<:Any,T,<:Any},Tm<:Metadata,
+    Tb<:AbstractVector,Tw<:AbstractVector,Tv<:AbstractVector{Int},Tc}
+    Kes::TK
+    fes::Tf
+    ges::Tg
+    fixedload::Tfl
+    Fes::TF
+    cellvolumes::Tcv1
+    cellvalues::Tcv2
+    facevalues::Tfv
+    metadata::Tm
+    black::Tb
+    white::Tw
+    varind::Tv
+    cells::Tc
 end
 
 function Base.show(io::Base.IO, ::MIME"text/plain", efeainfo::ElementFEAInfo)
@@ -211,9 +214,9 @@ function GlobalFEAInfo(K, f)
     return GlobalFEAInfo(K, f, chol, qrfact)
 end
 
-@params mutable struct GlobalFEAInfo_hyperelastic{T}
-    K::AbstractMatrix{T}
-    g::AbstractVector{T}
+mutable struct GlobalFEAInfo_hyperelastic{T,TK<:AbstractMatrix{T},Tg<:AbstractVector{T}}
+    K::TK
+    g::Tg
 end
 
 function GlobalFEAInfo_hyperelastic(sp::StiffnessTopOptProblem)

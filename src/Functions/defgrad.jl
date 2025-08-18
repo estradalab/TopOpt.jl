@@ -1,9 +1,9 @@
-@params struct DefGradTensor{T} <: AbstractFunction{T}
-    problem::Any
-    solver::Any
+struct DefGradTensor{T,Tp,Ts,Tcv,Tc} <: AbstractFunction{T}
+    problem::Tp
+    solver::Ts
     global_dofs::Vector{Int}
-    cellvalues::Any
-    cells::Any
+    cellvalues::Tcv
+    cells::Tc
     _::T
 end
 function DefGradTensor(solver)
@@ -33,10 +33,10 @@ function (f::DefGradTensor)(dofs::DisplacementResult) # This is called in the Pk
     end
 end
 
-@params struct ElementDefGradTensor{T} <: AbstractFunction{T} # C2 creates one of these objects ----------------------------------------------------------------[C3]
+struct ElementDefGradTensor{T,Tc,Tci} <: AbstractFunction{T} # C2 creates one of these objects ----------------------------------------------------------------[C3]
     defgrad_tensor::DefGradTensor{T}
-    cell::Any
-    cellidx::Any
+    cell::Tc
+    cellidx::Tci
 end
 function Base.getindex(f::DefGradTensor{T}, cellidx) where {T} # This is encounter in C1 -----------------------------------------------------------------------[C2]
     reinit!(f, cellidx)
@@ -87,12 +87,12 @@ function (f::ElementDefGradTensor)(u::DisplacementResult; element_dofs=false) #-
     return F
 end
 
-@params struct ElementDefGradTensorKernel{T} <: AbstractFunction{T} # ------------------------------------------------------------------------------------------------------------[C7]
+struct ElementDefGradTensorKernel{T,Tc} <: AbstractFunction{T} # ------------------------------------------------------------------------------------------------------------[C7]
     E::T
     ν::T
     q_point::Int
     a::Int
-    cellvalues::Any
+    cellvalues::Tc
     dim::Int
 end
 function (f::ElementDefGradTensorKernel)(u::DisplacementResult) # ----------------------------------------------------------------------------------------------------------------[C8] ---- nifty

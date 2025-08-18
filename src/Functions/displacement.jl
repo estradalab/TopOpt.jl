@@ -13,18 +13,20 @@ mutable struct Displacement{
     maxfevals::Int
 end
 
-@params mutable struct HyperelasticDisplacement{T} <: AbstractFunction{T}
-    u::AbstractVector{T} # displacement vector
-    F::AbstractVector # deformation gradient tensor
-    dudx_tmp::AbstractVector # directional derivative
-    solver::AbstractHyperelasticDisplacementSolver
-    global_dofs::AbstractVector{<:Integer}
+mutable struct HyperelasticDisplacement{T,Tu<:AbstractVector{T},TF<:AbstractVector,Td<:AbstractVector,
+    Ts<:AbstractHyperelasticDisplacementSolver,Tg<:AbstractVector{<:Integer},
+    Tek<:ElementK,Teg<:TopOpt.Functions.Elementg,TAk<:AssembleK,TAg<:TopOpt.Functions.Assemblef} <: AbstractFunction{T}
+    u::Tu # displacement vector
+    F::TF # deformation gradient tensor
+    dudx_tmp::Td # directional derivative
+    solver::Ts
+    global_dofs::Tg
     fevals::Int
     maxfevals::Int
-    ek::ElementK
-    eg::TopOpt.Functions.Elementg
-    Assemble_K::AssembleK
-    Assemble_g::TopOpt.Functions.Assemblef
+    ek::Tek
+    eg::Teg
+    Assemble_K::TAk
+    Assemble_g::TAg
 end
 
 function Base.show(::IO, ::MIME{Symbol("text/plain")}, ::Displacement)

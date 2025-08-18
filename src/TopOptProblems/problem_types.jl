@@ -782,7 +782,7 @@ end
 ///**********************************-> 
 
 
-@params struct TensionBar{dim, T, N, M} <: StiffnessTopOptProblem{dim, T}
+struct TensionBar{dim, T, N, M} <: StiffnessTopOptProblem{dim, T}
     rect_grid::RectilinearGrid{dim, T, N, M}
     E::T
     ν::T
@@ -809,16 +809,17 @@ end
 - `white`:  a `BitVector` of length equal to the number of elements where `white[e]` is 1 iff the `e`^th element must not be part of the final design
 - `varind`: an `AbstractVector{Int}` of length equal to the number of elements where `varind[e]` gives the index of the decision variable corresponding to element `e`. Because some elements can be fixed to be black or white, not every element has a decision variable associated.
 """
-@params struct TensionBar{dim,T,N,M} <: StiffnessTopOptProblem{dim,T}
-    rect_grid::RectilinearGrid{dim,T,N,M}
+struct TensionBar{dim,T,N,M,Tr<:RectilinearGrid{dim,T,N,M},Tc<:ConstraintHandler{<:DofHandler{dim,<:Cell{dim,N,M},T},T},
+    Tb<:AbstractVector,Tw<:AbstractVector,Tv<:AbstractVector{Int},Tm<:Metadata} <: StiffnessTopOptProblem{dim,T}
+    rect_grid::Tr
     E::T
     ν::T
-    ch::ConstraintHandler{<:DofHandler{dim,<:Cell{dim,N,M},T},T}
+    ch::Tc
     disp::T
-    black::AbstractVector
-    white::AbstractVector
-    varind::AbstractVector{Int}
-    metadata::Metadata
+    black::Tb
+    white::Tw
+    varind::Tv
+    metadata::Tm
 end
 
 function Base.show(::IO, ::MIME{Symbol("text/plain")}, ::TensionBar)
@@ -895,7 +896,7 @@ O*                                *->
 O**********************************-> 
 //
 
-@params struct TensionRoller{dim, T, N, M} <: StiffnessTopOptProblem{dim, T}
+struct TensionRoller{dim, T, N, M} <: StiffnessTopOptProblem{dim, T}
     rect_grid::RectilinearGrid{dim, T, N, M}
     E::T
     ν::T
@@ -922,16 +923,17 @@ end
 - `white`:  a `BitVector` of length equal to the number of elements where `white[e]` is 1 iff the `e`^th element must not be part of the final design
 - `varind`: an `AbstractVector{Int}` of length equal to the number of elements where `varind[e]` gives the index of the decision variable corresponding to element `e`. Because some elements can be fixed to be black or white, not every element has a decision variable associated.
 """
-@params struct TensionRoller{dim,T,N,M} <: StiffnessTopOptProblem{dim,T}
-    rect_grid::RectilinearGrid{dim,T,N,M}
+struct TensionRoller{dim,T,N,M,Tr<:RectilinearGrid{dim,T,N,M},Tc<:ConstraintHandler{<:DofHandler{dim,<:Cell{dim,N,M},T},T},
+    Tb<:AbstractVector,Tw<:AbstractVector,Tv<:AbstractVector{Int},Tm<:Metadata} <: StiffnessTopOptProblem{dim,T}
+    rect_grid::Tr
     E::T
     ν::T
-    ch::ConstraintHandler{<:DofHandler{dim,<:Cell{dim,N,M},T},T}
+    ch::Tc
     disp::T
-    black::AbstractVector
-    white::AbstractVector
-    varind::AbstractVector{Int}
-    metadata::Metadata
+    black::Tb
+    white::Tw
+    varind::Tv
+    metadata::Tm
 end
 
 function Base.show(::IO, ::MIME{Symbol("text/plain")}, ::TensionRoller)

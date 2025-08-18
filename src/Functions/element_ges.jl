@@ -1,13 +1,14 @@
-@params mutable struct Elementg{T} <: AbstractFunction{T}
-    solver::HyperelasticDisplacementSolver
-    ges::AbstractVector{<:AbstractVector{T}}
-    ges_0::AbstractVector{<:AbstractVector{T}}
-    penalty::AbstractPenalty{T}
+mutable struct Elementg{T,Ts<:HyperelasticDisplacementSolver,Tg<:AbstractVector{<:AbstractVector{T}},
+    Tg0<:AbstractVector{<:AbstractVector{T}},Tp<:AbstractPenalty{T},Tb<:AbstractVector{T},Tc<:CellScalarValues,Tcv<:CellVectorValues} <: AbstractFunction{T}
+    solver::Ts
+    ges::Tg
+    ges_0::Tg0
+    penalty::Tp
     xmin::T
     gesize::Int
-    body_force::AbstractVector{T}
-    cellvalues::CellScalarValues
-    cellvaluesV::CellVectorValues
+    body_force::Tb
+    cellvalues::Tc
+    cellvaluesV::Tcv
 end
 
 function Base.show(::IO, ::MIME{Symbol("text/plain")}, ::Elementg)
