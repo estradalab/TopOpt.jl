@@ -777,7 +777,7 @@ end
 ```
 ///**********************************->
 ///*                                *->
-///*                                *-> disp
+///*                                *-> disp (θ, ϕ)
 ///*                                *->
 ///**********************************-> 
 
@@ -803,6 +803,8 @@ end
 - `E`: Young's modulus
 - `ν`: Poisson's ration
 - `disp`: displacement over the right face of the beam (positive is right)
+- `θ`: angle (radian) defining the direction of the displacement in the xy-plane from the x-axis
+- `ϕ`: angle (radian) defining the direction of the displacement from the z-axis 
 - `ch`: a `Ferrite.ConstraintHandler` struct
 - `metadata`: Metadata having various cell-node-dof relationships
 - `black`: a `BitVector` of length equal to the number of elements where `black[e]` is 1 iff the `e`^th element must be part of the final design
@@ -816,6 +818,8 @@ struct TensionBar{dim,T,N,M,Tr<:RectilinearGrid{dim,T,N,M},Tc<:ConstraintHandler
     ν::T
     ch::Tc
     disp::T
+    θ::T
+    ϕ::T
     black::Tb
     white::Tw
     varind::Tv
@@ -832,9 +836,11 @@ function TensionBar(
     sizes::NTuple{dim},
     E,
     ν,
-    disp,
+    disp;
+    θ = 0,
+    ϕ = pi/2
 ) where {dim,CellType}
-    _T = promote_type(eltype(sizes), typeof(E), typeof(ν), typeof(disp))
+    _T = promote_type(eltype(sizes), typeof(E), typeof(ν), typeof(disp), typeof(θ), typeof(ϕ))
     if _T <: Integer
         T = Float64
     else
@@ -870,7 +876,8 @@ function TensionBar(
 
     dbc_left = Dirichlet(:u, getnodeset(rect_grid.grid, "fixed_left"), (x, t) -> zeros(T, dim), collect(1:dim))
     add!(ch, dbc_left)
-    dbc_right = Dirichlet(:u, getnodeset(rect_grid.grid, "disp_right"), (x, t) -> t*T[disp; zeros(dim-1)], collect(1:dim))
+    u_hat = dim == 2 ? [cos(θ), sin(θ)] : [cos(θ)*sin(ϕ), sin(θ)*sin(ϕ), cos(ϕ)]
+    dbc_right = Dirichlet(:u, getnodeset(rect_grid.grid, "disp_right"), (x, t) -> t*T.(disp*u_hat), collect(1:dim))
     add!(ch, dbc_right)
     close!(ch)
     t = T(1)
@@ -884,7 +891,7 @@ function TensionBar(
     black, white = find_black_and_white(dh)
     varind = find_varind(black, white)
 
-    return TensionBar(rect_grid, E, ν, ch, disp, black, white, varind, metadata)
+    return TensionBar(rect_grid, T(E), T(ν), ch, T(disp), T(θ), T(ϕ), black, white, varind, metadata)
 end
 
 """
