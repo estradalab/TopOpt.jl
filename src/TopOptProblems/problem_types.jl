@@ -894,6 +894,18 @@ function TensionBar(
     return TensionBar(rect_grid, T(E), T(ν), ch, T(disp), T(θ), T(ϕ), black, white, varind, metadata)
 end
 
+function getforce(p::TensionBar{dim,T},s) where {dim, T}
+    disp_right_nodeset = Ferrite.getnodeset(p.rect_grid.grid, "disp_right")
+    idx = findfirst(bc -> bc.faces == disp_right_nodeset, p.ch.dbcs)
+    dbc_right = p.ch.dbcs[idx]
+
+    dbc_right_dofs = [dbc_right.local_face_dofs_offset[i:dim:end] for i in 1:dim]
+
+    r = s.globalinfo.Kglob * s.u - s.globalinfo.fglob
+    r = [sum(r[dofs]) for dofs in dbc_right_dofs]
+    return r
+end
+
 """
 ```
 O**********************************->
@@ -1025,6 +1037,17 @@ function TensionRoller(
     varind = find_varind(black, white)
 
     return TensionRoller(rect_grid, E, ν, ch, disp, black, white, varind, metadata)
+end
+
+function getforce(p::TensionRoller{dim,T},s) where {dim, T}
+
+    disp_right_nodeset = Ferrite.getnodeset(p.rect_grid.grid, "disp_right")
+    idx = findfirst(bc -> bc.faces == disp_right_nodeset, p.ch.dbcs)
+    dbc_right = p.ch.dbcs[idx]
+    dbc_right_dofs_x = dbc_right.local_face_dofs_offset
+
+    r = s.globalinfo.Kglob * s.u - s.globalinfo.fglob
+    return [sum(r[dbc_right_dofs_x]); zeros(T, dim - 1)]
 end
 
 nnodespercell(p::Union{PointLoadCantilever,HalfMBB,RayProblem,TensionBar,TensionRoller}) = nnodespercell(p.rect_grid)

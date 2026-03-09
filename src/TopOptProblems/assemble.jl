@@ -82,6 +82,10 @@ function assemble!(
 
     #* apply boundary condition
     _K = TK <: Symmetric ? K.data : K
+
+    globalinfo.Kglob = copy(_K)
+    globalinfo.fglob = copy(f)
+
     apply!(_K, f, ch)
 
     return nothing

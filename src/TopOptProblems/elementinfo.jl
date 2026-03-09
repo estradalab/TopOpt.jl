@@ -163,11 +163,13 @@ end
 
 An instance of `GlobalFEAInfo` hosts the global stiffness matrix `K`, the load vector `f` and the cholesky decomposition of the `K`, `cholK`.
 """
-mutable struct GlobalFEAInfo{T,TK<:AbstractMatrix{T},Tf<:AbstractVector{T},Tc,Tq}
+mutable struct GlobalFEAInfo{T,TK<:AbstractMatrix{T},Tf<:AbstractVector{T},Tc,Tq,TKg<:AbstractMatrix{T},Tfg<:AbstractVector{T}}
     K::TK
     f::Tf
     cholK::Tc
     qrK::Tq
+    Kglob::TKg
+    fglob::Tfg
 end
 function Base.show(::IO, ::MIME{Symbol("text/plain")}, ::GlobalFEAInfo)
     return println("TopOpt global FEA information")
@@ -180,7 +182,7 @@ Constructs an empty instance of `GlobalFEAInfo` where the field `K` is an empty 
 """
 GlobalFEAInfo((::Type{T})=Float64) where {T} = GlobalFEAInfo{T}()
 function GlobalFEAInfo{T}() where {T}
-    return GlobalFEAInfo(sparse(zeros(T, 0, 0)), zeros(T, 0), cholesky(one(T)), qr(one(T)))
+    return GlobalFEAInfo(sparse(zeros(T, 0, 0)), zeros(T, 0), cholesky(one(T)), qr(one(T)), sparse(zeros(T, 0, 0)), zeros(T, 0))
 end
 
 """
@@ -198,8 +200,8 @@ function GlobalFEAInfo(
 )
     chol = cholesky(spdiagm(0 => ones(size(K, 1))))
     qrfact = qr(spdiagm(0 => ones(size(K, 1))))
-    return GlobalFEAInfo{eltype(K),typeof(K),typeof(f),typeof(chol),typeof(qrfact)}(
-        K, f, chol, qrfact
+    return GlobalFEAInfo{eltype(K),typeof(K),typeof(f),typeof(chol),typeof(qrfact),typeof(K),typeof(f)}(
+        K, f, chol, qrfact, K, f
     )
 end
 
@@ -211,7 +213,7 @@ Constructs an instance of `GlobalFEAInfo` with global stiffness matrix `K` and l
 function GlobalFEAInfo(K, f)
     chol = cholesky(Matrix{eltype(K)}(I, size(K)...))
     qrfact = qr(Matrix{eltype(K)}(I, size(K)...))
-    return GlobalFEAInfo(K, f, chol, qrfact)
+    return GlobalFEAInfo(K, f, chol, qrfact, K, f)
 end
 
 mutable struct GlobalFEAInfo_hyperelastic{T,TK<:AbstractMatrix{T},Tg<:AbstractVector{T}}
