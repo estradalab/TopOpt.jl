@@ -6,7 +6,7 @@ mutable struct Displacement{
     Tg<:AbstractVector{<:Integer},
 } <: AbstractFunction{T}
     u::Tu # displacement vector
-    dudx_tmp::Td # directional derivative
+    x̄::Td # directional derivative
     solver::Ts
     global_dofs::Tg
     fevals::Int
@@ -18,7 +18,7 @@ mutable struct HyperelasticDisplacement{T,Tu<:AbstractVector{T},TF<:AbstractVect
     Tek<:ElementK,Teg<:TopOpt.Functions.Elementg,TAk<:AssembleK,TAg<:TopOpt.Functions.Assemblef} <: AbstractFunction{T}
     u::Tu # displacement vector
     F::TF # deformation gradient tensor
-    dudx_tmp::Td # directional derivative
+    x̄::Td # directional derivative
     solver::Ts
     global_dofs::Tg
     fevals::Int
@@ -55,8 +55,8 @@ function Displacement(solver::AbstractFEASolver; maxfevals=10^8)
     global_dofs = zeros(Int, k)
     total_ndof = ndofs(dh)
     u = zeros(T, total_ndof)
-    dudx_tmp = zeros(T, length(solver.vars))
-    return Displacement(u, dudx_tmp, solver, global_dofs, 0, maxfevals)
+    x̄ = zeros(T, length(solver.vars))
+    return Displacement(u, x̄, solver, global_dofs, 0, maxfevals)
 end
 
 function Displacement(solver::AbstractHyperelasticDisplacementSolver; maxfevals=10^8)
@@ -69,12 +69,12 @@ function Displacement(solver::AbstractHyperelasticDisplacementSolver; maxfevals=
     total_ndof = ndofs(dh)
     u = zeros(T, total_ndof)
     F = [zeros(typeof(solver.elementinfo.Fes[1])) for _ in 1:total_ndof/dim]
-    dudx_tmp = zeros(T, length(solver.vars))
+    x̄ = zeros(T, length(solver.vars))
     ek = ElementK(solver) 
     eg = TopOpt.Functions.Elementg(solver)
     Assemble_K = AssembleK(solver.problem) 
     Assemble_g = TopOpt.Functions.Assemblef(solver.problem) 
-    return HyperelasticDisplacement(u, F, dudx_tmp, solver, global_dofs, 0, maxfevals, ek, eg, Assemble_K, Assemble_g)
+    return HyperelasticDisplacement(u, F, x̄, solver, global_dofs, 0, maxfevals, ek, eg, Assemble_K, Assemble_g)
 end
 
 """
@@ -86,7 +86,6 @@ displacement vector `u`
 """
 function (dp::Displacement{T})(x::PseudoDensities) where {T}
     @unpack solver, global_dofs = dp
-    @unpack penalty, problem, xmin = solver
     dp.fevals += 1
     @assert length(global_dofs) == ndofs_per_cell(solver.problem.ch.dh)
     solver.vars .= x.x
@@ -96,7 +95,6 @@ end
 
 function (dp::HyperelasticDisplacement{T})(x::PseudoDensities) where {T}
     @unpack solver, global_dofs = dp
-    @unpack penalty, problem, xmin = solver
     dp.fevals += 1
     @assert length(global_dofs) == ndofs_per_cell(solver.problem.ch.dh)
     solver.vars = x.x
@@ -105,39 +103,58 @@ function (dp::HyperelasticDisplacement{T})(x::PseudoDensities) where {T}
 end
 
 """
-rrule for linear elastic solver autodiff.
-    
-du/dxe = -K^-1 * dK/dxe * u
-d(u)/d(x_e) = - K^-1 * d(K)/d(x_e) * u
-            = - K^-1 * (Σ_ei d(ρ_ei)/d(x_e) * K_ei) * u
-            = - K^-1 * [d(ρ_e)/d(x_e) * K_e * u]
-d(u)/d(x_e)' * Δ = -d(ρ_e)/d(x_e) * u' * K_e * (K^-1 * Δ)
+rrule for linear elastic solver autodiff:
 
-where d(u)/d(x) ∈ (nDof x nCell); d(u)/d(x)^T * Δ = (nCell x nDof) * (nDof x 1) -> nCell x 1
+Ku = f
+d(Ku)/dx = df/dx
+dK/dx * u + K * du/dx = 0 [assume f is independent of x; neglecting self-weight and inertial contributions]
+du/dx = - K^-1 * dK/dx * u
+du/dxe = - K^-1 * dK/dxe * u    [xe/ρe denote scalar x/ρ values of a specific element]
+
+x̄ := (du/dx)^T * Δ 
+x̄e = - (du/dxe)^T * Δ
+   = (- K^-1 * dK/dxe * u)^T * Δ
+   = - (dK/dxe * u)^T * K^-T * Δ 
+   = - (dK/dxe * u)^T * K^-1 * Δ    [K = K^T] 
+   = - (dK/dxe * u)^T * λ    [λ := K^-1 * Δ]   
+   = - (dK/dρe * dρe/dxe * u)^T * λ  [K(ρ(x))]
+   = - dρe/dxe * (Ke * u[global_dofs_e])^T * λ[global_dofs_e]    [only non-zero terms in dK/dρe are from element stiffness matrix, Ke]
+   = - dρe/dxe * (Ke_mod * u[global_dofs_e])^T * λ[global_dofs_e] [K_mod: rows of Ke for Dirichlet dofs are zeroed to enforce d(u_dirichlet)/dx = 0]
+
+Note: du/dx ∈ R^(nDof x nCell), x̄ ∈ R(nCell x size(Δ,2))
 """
 function ChainRulesCore.rrule(dp::Displacement, x::PseudoDensities)
-    @unpack dudx_tmp, solver, global_dofs = dp
+    @unpack x̄, solver, global_dofs = dp
     @unpack penalty, problem, u, xmin = solver
     dh = getdh(problem)
     @unpack Kes = solver.elementinfo
-    # Forward-pass
-    # Cholesky factorisation
+
+    # Forward pass
     u = dp(x)
-    return u, Δ -> begin # v
-        if hasproperty(Δ, :u)
-            solver.rhs .= Δ.u
-        else
-            solver.rhs .= Δ
-        end
+
+    return u, Δ -> begin 
+        solver.rhs .= hasproperty(Δ, :u) ? Δ.u : Δ
         solver(; reuse_fact=true, assemble_f=false)
-        dudx_tmp .= 0
-        for e in 1:length(x.x)
-            _, dρe = get_ρ_dρ(x.x[e], penalty, xmin)
+        fill!(x̄, zero(eltype(solver.rhs)))
+        Keue = similar(u.u, length(global_dofs)) # new
+        z = zero(eltype(Keue))
+        nels = length(x.x)
+        @inbounds for e in 1:nels
+            _, dρdxe = get_ρ_dρdx(x.x[e], penalty, xmin)
             celldofs!(global_dofs, dh, e)
-            Keu = bcmatrix(Kes[e]) * u.u[global_dofs]
-            dudx_tmp[e] = -dρe * dot(Keu, solver.lhs[global_dofs])
+            ue = @view u.u[global_dofs]
+            λe = @view solver.lhs[global_dofs]
+            Ke = Kes[e]
+            mask = Ke.data.mask 
+            mul!(Keue, Ke, ue)
+            for i in eachindex(mask) 
+                if !mask[i]
+                    Keue[i] = z # zero rows corresponding to Dirichlet dofs
+                end
+            end
+            x̄[e] = - dρdxe * Keue' * λe
         end
-        return nothing, Tangent{typeof(x)}(; x=dudx_tmp) # J1' * v, J2' * v
+        return nothing, Tangent{typeof(x)}(; x=x̄)
     end
 end
 

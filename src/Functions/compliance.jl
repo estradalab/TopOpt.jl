@@ -70,7 +70,7 @@ function compute_compliance(
                 obj += penalty(xmin) * cell_comp[i]
             end
         else
-            ρe, dρe = get_ρ_dρ(x[varind[i]], penalty, xmin)
+            ρe, dρe = get_ρ_dρdx(x[varind[i]], penalty, xmin)
             grad[varind[i]] = -dρe * cell_comp[i]
             obj += ρe * cell_comp[i]
         end
@@ -102,7 +102,7 @@ function compute_inner(
                     cell_comp += u1[cell_dofs[v, i]] * Ke[v, w] * u2[cell_dofs[w, i]]
                 end
             end
-            ρe, dρe = get_ρ_dρ(x[varind[i]], penalty, xmin)
+            ρe, dρe = get_ρ_dρdx(x[varind[i]], penalty, xmin)
             inner[varind[i]] = -dρe * cell_comp
         end
     end

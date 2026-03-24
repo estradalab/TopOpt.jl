@@ -74,7 +74,7 @@ end
 # d(u)/d(x_e)' * Δ = -d(ρ_e)/d(x_e) * u' * K_e * (K^-1 * Δ)
 # """
 # function ChainRulesCore.rrule(dp::TrussStress, x)
-#     @unpack dudx_tmp, solver, global_dofs = dp
+#     @unpack x̄, solver, global_dofs = dp
 #     @unpack penalty, problem, u, xmin = solver
 #     dh = getdh(problem)
 #     @unpack Kes = solver.elementinfo
@@ -84,13 +84,13 @@ end
 #     return u, Δ -> begin # v
 #         solver.rhs .= Δ
 #         solver(reuse_fact = true, assemble_f = false)
-#         dudx_tmp .= 0
+#         x̄ .= 0
 #         for e in 1:length(x)
-#             _, dρe = get_ρ_dρ(x[e], penalty, xmin)
+#             _, dρe = get_ρ_dρdx(x[e], penalty, xmin)
 #             celldofs!(global_dofs, dh, e)
 #             Keu = bcmatrix(Kes[e]) * u[global_dofs]
-#             dudx_tmp[e] = -dρe * dot(Keu, solver.lhs[global_dofs])
+#             x̄[e] = -dρe * dot(Keu, solver.lhs[global_dofs])
 #         end
-#         return nothing, dudx_tmp # J1' * v, J2' * v
+#         return nothing, x̄ # J1' * v, J2' * v
 #     end
 # end

@@ -6,7 +6,7 @@ function get_ρ(x_e::T, penalty, xmin) where {T}
     end
 end
 
-function get_ρ_dρ(x_e::T, penalty, xmin) where {T}
+function get_ρ_dρdx(x_e::T, penalty, xmin) where {T}
     d = ForwardDiff.Dual{T}(x_e, one(T))
     if PENALTY_BEFORE_INTERPOLATION
         p = density(penalty(d), xmin)

@@ -55,15 +55,17 @@ function (s::DirectDisplacementSolver{T})(
     kwargs...,
 ) where {T,safe,newT}
     globalinfo = s.globalinfo
-    assemble!(
-        globalinfo,
-        s.problem,
-        s.elementinfo,
-        s.vars,
-        getpenalty(s),
-        s.xmin;
-        assemble_f=assemble_f,
-    )
+    if assemble_f
+        assemble!(
+            globalinfo,
+            s.problem,
+            s.elementinfo,
+            s.vars,
+            getpenalty(s),
+            s.xmin;
+            assemble_f=assemble_f,
+        )
+    end
     K = globalinfo.K
     if safe
         m = meandiag(K)
@@ -74,7 +76,7 @@ function (s::DirectDisplacementSolver{T})(
         end
     end
     nans = false
-    if !reuse_fact
+    if !reuse_fact || T !== newT
         newK = T === newT ? K : newT.(K)
         if s.qr
             globalinfo.qrK = qr(newK.data)
