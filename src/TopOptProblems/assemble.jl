@@ -29,7 +29,7 @@ function assemble!(
     black = problem.black
     white = problem.white
     varind = problem.varind
-
+    
     _K = K isa Symmetric ? K.data : K
     _K.nzval .= 0
     assembler = Ferrite.AssemblerSparsityPattern(_K, f, Int[], Int[]) # For TopOpt folks https://github.com/Ferrite-FEM/Ferrite.jl/blob/98e2b674a8c6d740a779c022de31f73051cb353c/src/assembler.jl#L131 
@@ -59,7 +59,6 @@ function assemble!(
             end
             Ke = px * Ke
             if assemble_f
-                fe = px * fe
                 Ferrite.assemble!(assembler, global_dofs, Ke, fe)
             else
                 Ferrite.assemble!(assembler, global_dofs, Ke)
@@ -72,7 +71,6 @@ function assemble!(
             end
             Ke = px * Ke
             if assemble_f
-                fe = px * fe
                 Ferrite.assemble!(assembler, global_dofs, Ke, fe)
             else
                 Ferrite.assemble!(assembler, global_dofs, Ke)
@@ -82,9 +80,11 @@ function assemble!(
 
     #* apply boundary condition
     _K = TK <: Symmetric ? K.data : K
-
-    globalinfo.Kglob = copy(_K)
-    globalinfo.fglob = copy(f)
+    
+    if !assemble_f
+        globalinfo.Kglob = copy(_K)
+        globalinfo.fglob = copy(f)
+    end
 
     apply!(_K, f, ch)
 
@@ -140,7 +140,6 @@ function assemble_hyperelastic!(
             end
             Ke = px * Ke
             if assemble_f
-                ge = px * ge
                 Ferrite.assemble!(assembler, global_dofs, Ke, ge)
             else
                 Ferrite.assemble!(assembler, global_dofs, Ke)
@@ -153,7 +152,6 @@ function assemble_hyperelastic!(
             end
             Ke = px * Ke
             if assemble_f
-                ge = px * ge
                 Ferrite.assemble!(assembler, global_dofs, Ke, ge)
             else
                 Ferrite.assemble!(assembler, global_dofs, Ke)
